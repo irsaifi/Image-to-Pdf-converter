@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image to PDF Converter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+        <h1 class="text-2xl font-bold text-center mb-6 italic">Image to PDF Converter</h1>
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-semibold mb-2" for="imageInput">
+                <span class="italic">Select Images</span>
+            </label>
+            <input type="file" id="imageInput" accept="image/jpeg,image/png" multiple
+                   class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+        </div>
+        <button id="convertBtn"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
+                disabled>
+            <span class="italic">Convert to PDF</span>
+        </button>
+        <div id="status" class="mt-4 text-center text-gray-600"></div>
+    </div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const convertBtn = document.getElementById('convertBtn');
+        const status = document.getElementById('status');
+
+        imageInput.addEventListener('change', () => {
+            convertBtn.disabled = imageInput.files.length === 0;
+            status.textContent = imageInput.files.length > 0 ? `${imageInput.files.length} image(s) selected` : '';
+        });
+
+        convertBtn.addEventListener('click', async () => {
+            const files = imageInput.files;
+            if (files.length === 0) return;
+
+            status.textContent = 'Converting...';
+            status.classList.remove('text-green-600', 'text-red-600');
+            convertBtn.disabled = true;
+
+            const { PDFDocument } = window.PDFLib;
+            const pdfDoc = await PDFDocument.create();
+
+            for (const file of files) {
+                try {
+                    // Validate file size (limit to 10MB to prevent crashes)
+                    if (file.size > 10 * 1024 * 1024) {
+                        status.textContent = `File ${file.name} is too large. Maximum size is 10MB.`;
+                        status.classList.add('text-red-600');
+                        convertBtn.disabled = false;
+                        return;
+                    }
+
+                    const arrayBuffer = await file.arrayBuffer();
+                    const imgData = new Uint8Array(arrayBuffer);
+
+                    let img;
+                    if (file.type === 'image/jpeg') {
+                        img = await pdfDoc.embedJpg(imgData);
+                    } else if (file.type === 'image/png') {
+                        img = await pdfDoc.embedPng(imgData);
+                    } else {
+                        status.textContent = `Unsupported format for ${file.name}. Use JPG or PNG.`;
+                        status.classList.add('text-red-600');
+                        convertBtn.disabled = false;
+                        return;
+                    }
+
+                    // Scale image to fit within A4 page size (595 x 842 points)
+                    const maxWidth = 595;
+                    const maxHeight = 842;
+                    let { width, height } = img;
+                    if (width > maxWidth || height > maxHeight) {
+                        const scale = Math.min(maxWidth / width, maxHeight / height);
+                        width *= scale;
+                        height *= scale;
+                    }
+
+                    const page = pdfDoc.addPage([width, height]);
+                    page.drawImage(img, {
+                        x: 0,
+                        y: 0,
+                        width,
+                        height,
+                    });
+                } catch (error) {
+                    status.textContent = `Error processing ${file.name}: ${error.message}`;
+                    status.classList.add('text-red-600');
+                    convertBtn.disabled = false;
+                    return;
+                }
+            }
+
+            try {
+                const pdfBytes = await pdfDoc.save();
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'converted.pdf';
+                link.click();
+                URL.revokeObjectURL(url);
+
+                status.textContent = 'PDF downloaded successfully!';
+                status.classList.add('text-green-600');
+            } catch (error) {
+                status.textContent = `Error creating PDF: ${error.message}`;
+                status.classList.add('text-red-600');
+            }
+
+            convertBtn.disabled = false;
+        });
+    </script>
+</body>
+</html>
